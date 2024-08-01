@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <Windows.h>
 #include <psapi.h>
-#include <string.h>
 
 struct Process {
     int pid;
@@ -31,7 +30,7 @@ struct Process GetProcessByName(const char name[]) {
     cProcesses = cbNeeded / sizeof(DWORD);
 
     for (DWORD i = 0; i < cProcesses; i++) {
-        HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, aProcesses[i]);
+        HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, aProcesses[i]);
 
         if (!handle) {
             continue;
@@ -50,7 +49,6 @@ struct Process GetProcessByName(const char name[]) {
                 if (EnumProcessModules(handle, proc.hMods, sizeof(proc.hMods), &cbNeeded)) {
                     for (DWORD j = 0; j < (cbNeeded / sizeof(HMODULE)); j++) {
                         if (GetModuleFileNameEx(handle, proc.hMods[j], proc.szModName, sizeof(proc.szModName) / sizeof(TCHAR))) {
-                            printf(TEXT("\t%s (0x%p)\n"), proc.szModName, (void*)proc.hMods[j]);
                         }
                     }
                 }
@@ -66,10 +64,70 @@ struct Process GetProcessByName(const char name[]) {
     return proc;
 }
 
+
+BOOL DataCompare(const BYTE* data, const BYTE* pattern, const char* mask) {
+    for (; *mask; ++mask, ++data, ++pattern) {
+        if (*mask == 'x' && *data != *pattern) {
+            return FALSE;
+        }
+    }
+    return (*mask) == NULL;
+}
+
+
+DWORD_PTR FindPattern(HANDLE hProcess, BYTE* pattern, char* mask, DWORD_PTR start, DWORD_PTR end) {
+    SIZE_T bytesRead;
+    BYTE buffer[4096];
+
+    for (DWORD_PTR i = start; i < end; i += sizeof(buffer)) {
+        ReadProcessMemory(hProcess, (LPCVOID)i, buffer, sizeof(buffer), &bytesRead);
+        for (size_t j = 0; j < bytesRead; j++) {
+            if (DataCompare(buffer + j, pattern, mask)) {
+                return i + j;
+            }
+        }
+    }
+    return 0;
+}
+
 int main(void) {
-    struct Process proc = GetProcessByName("Spotify.exe");
+    struct Process proc = GetProcessByName("Mesen.exe");
 
     if (proc.pid != 0) {
+
+        //Read process memory example
+        byte value;
+        SIZE_T bytesRead;
+        if (ReadProcessMemory(proc.handle, (LPCVOID)0x2725BE8D1E0, &value, sizeof(value), &bytesRead)) {
+            printf("Value read from address 0x2725BE8D1E0: %d\n", value);
+        } else {
+            printf("Error reading address: %lu\n", GetLastError());
+        }
+
+        //Write process memory example
+        byte newValue = 10;
+        SIZE_T bytesWrite;
+        if (WriteProcessMemory(proc.handle, (LPCVOID)0x2725BE8D1E0, &newValue, sizeof(newValue), &bytesWrite)){
+            printf("Value writed from address 0x2725BE8D1E0: %d\n", newValue);
+        }else{
+            printf("Error writing address: %lu\n", GetLastError());
+        }
+
+
+        //AoB scan example
+        BYTE pattern[] = {0x1F, 0x14, 0x05, 0x56, 0x30, 0x68, 0xAC, 0x44, 0xAC, 0x44, 0xAC, 0x44};
+        char mask[] = "xx?x";
+
+        DWORD_PTR start = proc.hMods[0];
+        DWORD_PTR end = proc.hMods[1];
+
+        DWORD_PTR address = FindPattern(proc.handle, pattern, mask, start, end);
+        if (address) {
+            printf("Pattern found at address: 0x%p\n", (void*)address);
+        } else {
+            printf("Pattern not found.\n");
+        }
+
         CloseHandle(proc.handle);
     } else {
         printf("Process not found.\n");
