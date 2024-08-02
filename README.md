@@ -1,0 +1,3 @@
+-Get process info handle by name (Handle, modules, full path) <br>
+-Aob Scan <br>
+-Compare AoB to get differences <br>
