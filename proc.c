@@ -7,6 +7,7 @@ struct Process {
     HANDLE handle;
     HMODULE hMods[1024];
     TCHAR szModName[MAX_PATH];
+    const char* fullPath;
 };
 
 void GetExecutableName(const char* fullPath, char* exeName, size_t exeNameSize) {
@@ -41,6 +42,7 @@ struct Process GetProcessByName(const char name[]) {
 
         if (QueryFullProcessImageNameA(handle, 0, path, &pathLen)) {
             char exeName[MAX_PATH];
+            proc.fullPath = path;
             GetExecutableName(path, exeName, sizeof(exeName));
 
             if (strcmp(name, exeName) == 0) {
@@ -90,47 +92,4 @@ DWORD_PTR FindPattern(HANDLE hProcess, BYTE* pattern, char* mask, DWORD_PTR star
     return 0;
 }
 
-int main(void) {
-    struct Process proc = GetProcessByName("Mesen.exe");
 
-    if (proc.pid != 0) {
-
-        //Read process memory example
-        byte value;
-        SIZE_T bytesRead;
-        if (ReadProcessMemory(proc.handle, (LPCVOID)0x2725BE8D1E0, &value, sizeof(value), &bytesRead)) {
-            printf("Value read from address 0x2725BE8D1E0: %d\n", value);
-        } else {
-            printf("Error reading address: %lu\n", GetLastError());
-        }
-
-        //Write process memory example
-        byte newValue = 10;
-        SIZE_T bytesWrite;
-        if (WriteProcessMemory(proc.handle, (LPCVOID)0x2725BE8D1E0, &newValue, sizeof(newValue), &bytesWrite)){
-            printf("Value writed from address 0x2725BE8D1E0: %d\n", newValue);
-        }else{
-            printf("Error writing address: %lu\n", GetLastError());
-        }
-
-
-        //AoB scan example
-        BYTE pattern[] = {0x1F, 0x14, 0x05, 0x56, 0x30, 0x68, 0xAC, 0x44, 0xAC, 0x44, 0xAC, 0x44};
-        char mask[] = "xx?x";
-
-        DWORD_PTR start = proc.hMods[0];
-        DWORD_PTR end = proc.hMods[1];
-
-        DWORD_PTR address = FindPattern(proc.handle, pattern, mask, start, end);
-        if (address) {
-            printf("Pattern found at address: 0x%p\n", (void*)address);
-        } else {
-            printf("Pattern not found.\n");
-        }
-
-        CloseHandle(proc.handle);
-    } else {
-        printf("Process not found.\n");
-    }
-    return 0;
-}
