@@ -2,81 +2,72 @@
 #include <stdlib.h>
 #include <string.h>
 
-void GetArray(char **buffer, int bufferSize){
-    *buffer = (char *)malloc(bufferSize * sizeof(char));
-    if (*buffer == NULL) {
-        printf("Memory allocation failed.\n");
-        exit(1);
-    }
 
-    if (fgets(*buffer, bufferSize, stdin) != NULL) {
-        size_t len = strlen(*buffer);
-        if (len > 0 && (*buffer)[len - 1] == '\n') {
-            (*buffer)[len - 1] = '\0';
+int getArraySize(char array[4096]){
+    int size = -1;
+    for (int i = 0; i < 4096; i++) {
+        if (i > 0 && array[i - 1] == ' ' && array[i] == ' ' || array[i] == '\0' || array[i] == '\n') {
+            size = i;
+            array[size] = '\0';
+            break;
         }
-    } else {
-        printf("Error reading input\n");
-        exit(1);
     }
+    return size;
 }
 
-void AoBComparation(char* firstArray, int bufferSize){
-    char* secondArray = NULL;
+void Comparation(char firstArray[], char secondArray[], int size, char *outArray){
+    for (int i = 0; i < size; i++){
+        if(firstArray[i] != secondArray[i]){
+            outArray[i] = '?';
+        }
+        else{
+            outArray[i] = firstArray[i];
+        }
+    }
+    outArray[size] = '\0';
+}
 
-    printf("Enter second array: ");
-    GetArray(&secondArray, bufferSize);
+void InputSecondArray(char firstArray[] ,int firstArraySize){
 
-    printf("First: %s\n", firstArray);
-    printf("Second: %s\n", secondArray);
+    printf("Input second array\n");
 
-    char* resultArray = (char *)malloc(bufferSize * sizeof(char));
-    if (resultArray == NULL) {
-        printf("Memory allocation failed.\n");
-        free(firstArray);
-        free(secondArray);
+    char secondArray[4096];
+
+    if(fgets(secondArray, sizeof(secondArray), stdin) == NULL){
+        printf("Invalid input\n");
         exit(1);
     }
 
+    int secondArraySize = getArraySize(secondArray);
 
-    for(int i = 0; i < bufferSize; i++){
-        if(firstArray[i] == secondArray[i]){
-            resultArray[i] = firstArray[i];
-        }else{
-            resultArray[i] = '?';
-        }
+    if(firstArraySize != secondArraySize){
+        printf("The two arrays must have the same length\n");
+        exit(1);
     }
 
-    resultArray[bufferSize - 1] = '\0';
+    char outArray[4096];
 
-    printf("Result: %s\n", resultArray);
+    Comparation(firstArray, secondArray, firstArraySize, outArray);
 
-    free(firstArray);
-    free(secondArray);
+    printf("Output array: \n%s\n", outArray);
 
-    AoBComparation(resultArray, bufferSize);
-
+    InputSecondArray(outArray, firstArraySize);
 }
 
 int main(void){
-    int bufferSize;
-    
-    printf("Enter the array size: ");
-    if (scanf("%d", &bufferSize) != 1 || bufferSize <= 0) {
-        printf("Invalid array size.\n");
-        return 1;
+    char firstArray[4096];
+    printf("Input the first array\n");
+
+    if (fgets(firstArray, sizeof(firstArray), stdin) == NULL) {
+        printf("Invalid input\n");
+        exit(1);
     }
+    
 
-    bufferSize = (bufferSize * 3) + 1;
+    int firstArraySize = getArraySize(firstArray);
 
 
-    while (getchar() != '\n');
-
-    char* firstArray = NULL;
-
-    printf("Enter first array: ");
-    GetArray(&firstArray, bufferSize);
-
-    AoBComparation(firstArray, bufferSize);
+    InputSecondArray(firstArray, firstArraySize);
 
     return 0;
 }
