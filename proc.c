@@ -2,14 +2,6 @@
 #include <Windows.h>
 #include <psapi.h>
 
-struct Process {
-    int pid;
-    HANDLE handle;
-    HMODULE hMods[1024];
-    TCHAR szModName[MAX_PATH];
-    const char* fullPath;
-};
-
 void GetExecutableName(const char* fullPath, char* exeName, size_t exeNameSize) {
     const char* lastSlash = strrchr(fullPath, '\\');
     if (lastSlash != NULL) {
@@ -20,52 +12,79 @@ void GetExecutableName(const char* fullPath, char* exeName, size_t exeNameSize) 
     exeName[exeNameSize - 1] = '\0';
 }
 
-struct Process GetProcessByName(const char name[]) {
-    DWORD aProcesses[1024], cbNeeded, cProcesses;
-    struct Process proc = {0, NULL, {0}, TEXT("")};
 
-    if (!EnumProcesses(aProcesses, sizeof(aProcesses), &cbNeeded)) {
-        return proc;
-    }
+
+HANDLE OpenProcessByName(const char *name, char* outPath) {
+    DWORD aProcesses[1024], cbNeeded, cProcesses;
+
+    if(!EnumProcesses(aProcesses, sizeof(aProcesses), &cbNeeded)){
+        return -1;
+    }   
 
     cProcesses = cbNeeded / sizeof(DWORD);
 
-    for (DWORD i = 0; i < cProcesses; i++) {
-        HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, aProcesses[i]);
+    for(DWORD i = 0 ; i < cProcesses; i++){
+        HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, aProcesses[i]);
 
         if (!handle) {
             continue;
         }
-
         char path[MAX_PATH];
         DWORD pathLen = MAX_PATH;
 
         if (QueryFullProcessImageNameA(handle, 0, path, &pathLen)) {
+            strcpy(outPath, path);
             char exeName[MAX_PATH];
-            proc.fullPath = path;
             GetExecutableName(path, exeName, sizeof(exeName));
-
-            if (strcmp(name, exeName) == 0) {
-                printf("Process found: %s (PID: %d)\n", name, aProcesses[i]);
-
-                if (EnumProcessModules(handle, proc.hMods, sizeof(proc.hMods), &cbNeeded)) {
-                    for (DWORD j = 0; j < (cbNeeded / sizeof(HMODULE)); j++) {
-                        if (GetModuleFileNameEx(handle, proc.hMods[j], proc.szModName, sizeof(proc.szModName) / sizeof(TCHAR))) {
-                        }
-                    }
-                }
-                
-                proc.pid = aProcesses[i];
-                proc.handle = handle;
-
-                return proc;
+            if(strcmp(exeName, name) == 0){
+                return handle;
             }
         }
+
         CloseHandle(handle);
+
     }
-    return proc;
+
+    return -1;
 }
 
+uintptr_t GetModuleBaseAddress(const char* name, HANDLE handle){
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+
+
+    if( EnumProcessModules(handle, hMods, sizeof(hMods), &cbNeeded))
+    {
+        for (int i = 0; i < (cbNeeded / sizeof(HMODULE)); i++ )
+        {
+            TCHAR szModName[MAX_PATH];
+
+            if ( GetModuleFileNameEx( handle, hMods[i], szModName,
+                                      sizeof(szModName) / sizeof(TCHAR)))
+            {
+                char exeName[MAX_PATH];
+                GetExecutableName(szModName, exeName, sizeof(exeName));
+                if(strcmp(name, exeName) == 0){
+                    return (uintptr_t)hMods[i];
+                }
+            }
+        }
+    }
+
+    return -1;
+}
+
+
+uintptr_t GetFinalAddress(HANDLE hProc, uintptr_t baseAddress, unsigned int* offsets, size_t offsetsSize) {
+    uintptr_t addr = baseAddress;
+    for (size_t i = 0; i < offsetsSize; i++) {
+        if (!ReadProcessMemory(hProc, (LPCVOID)addr, &addr, sizeof(addr), NULL)) {
+            return 0;
+        }
+        addr += offsets[i];
+    }
+    return addr;
+}
 
 BOOL DataCompare(const BYTE* data, const BYTE* pattern, const char* mask) {
     for (; *mask; ++mask, ++data, ++pattern) {
@@ -93,3 +112,18 @@ DWORD_PTR FindPattern(HANDLE hProcess, BYTE* pattern, char* mask, DWORD_PTR star
 }
 
 
+
+int main(void){
+    char path[MAX_PATH];
+    HANDLE hProcess = OpenProcessByName("Mesen.exe", path);
+    uintptr_t baseAddress = GetModuleBaseAddress("MesenCore.dll", hProcess) + 0x045ECED0;
+
+    const int pattern[] = {0x18, 0x40, 0x28, 0x0};
+    uintptr_t finalAddress = GetFinalAddress(hProcess, baseAddress, pattern, sizeof(pattern) / sizeof(pattern[0]));
+    printf("Final address is: %llx\n", finalAddress);
+    if(hProcess == NULL){
+        printf("Process not found");
+    }
+
+
+}
